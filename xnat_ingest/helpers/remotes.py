@@ -25,6 +25,20 @@ from .arg_types import StoreCredentials
 from .logging import logger
 
 
+# These SOP classes are not MR image scans in XNAT, even when Modality is MR.
+# Keep this separate from primary/secondary resource placement: Enhanced MR
+# Color Image Storage is an MR scan, but XNAT catalogs it under secondary.
+NATIVE_DICOM_CLASSIFICATION_VERSION = 1
+_NON_IMAGE_DICOM_SOP_CLASSES = frozenset(
+    {
+        "1.2.840.10008.5.1.4.1.1.4.2",  # MR Spectroscopy Storage
+        "1.2.840.10008.5.1.4.1.1.7.3",  # Multi-frame Grayscale Word SC
+        "1.2.840.10008.5.1.4.1.1.66",  # Raw Data Storage
+    }
+)
+_ENHANCED_MR_COLOR_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.4.3"
+
+
 class SessionListing(metaclass=abc.ABCMeta):
     @property
     @abc.abstractmethod
@@ -363,6 +377,21 @@ def get_xnat_resource(resource: ImagingResource, xsession: ty.Any) -> ty.Any:
     """
     xclasses = xsession.xnat_session.classes
     resource_name = resource.name
+    metadata = (
+        resource.metadata or {}
+        if resource.scan is not None and resource_name.casefold() == "dicom"
+        else {}
+    )
+    sop_class = str(metadata.get("SOPClassUID", ""))
+    non_image_dicom = (
+        metadata.get("Modality") == "PR"
+        or sop_class in _NON_IMAGE_DICOM_SOP_CLASSES
+    )
+    enhanced_mr_color = sop_class == _ENHANCED_MR_COLOR_SOP_CLASS
+    # Normalize on every import, including an already existing scan. Otherwise
+    # a repeat upload can create a DICOM resource beside the native secondary.
+    if non_image_dicom or enhanced_mr_color:
+        resource_name = "secondary"
 
     if resource.scan is None:
         try:
@@ -410,7 +439,11 @@ def get_xnat_resource(resource: ImagingResource, xsession: ty.Any) -> ty.Any:
                 modality = resource.metadata.get("Modality", default_scan_modality)
         else:
             modality = default_scan_modality
-        if modality == "SC":
+        if non_image_dicom:
+            ScanClass = xclasses.OtherDicomScanData
+        elif enhanced_mr_color:
+            ScanClass = xclasses.MrScanData
+        elif modality == "SC":
             ScanClass = xclasses.ScScanData
         elif modality == "MR":
             ScanClass = xclasses.MrScanData

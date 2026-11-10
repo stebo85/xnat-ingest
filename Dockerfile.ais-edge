@@ -1,0 +1,8 @@
+# Preserve the deployed v5 dependencies while replacing the native upload code.
+# Rebuild this file when changing the source; no source rewriting runs at startup.
+FROM ghcr.io/akshitbeniwal/xnat-ingest@sha256:d3e28c2d0c285431e0a2b51c103c27122e4950db1f8f93fe4e8969af4ea9fabb
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/stebo85/xnat-ingest" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.description="AIS edge v5 with native XNAT DICOM scan and resource classification"
+COPY xnat_ingest/helpers/remotes.py /usr/local/lib/python3.12/dist-packages/xnat_ingest/helpers/remotes.py
